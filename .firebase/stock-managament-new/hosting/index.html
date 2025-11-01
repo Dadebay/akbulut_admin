@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base href="/">
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="A new Flutter project.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Kumus Admin Panel">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <link rel="icon" type="image/png" href="favicon.png"/>
+  <title>Kümüş Online Platforma </title>
+  <link rel="manifest" href="manifest.json">
+  <script type="text/javascript"> window.flutterWebRenderer = "html"; </script>
+  <script>
+    window.addEventListener('load', function(ev) {
+      Flutter.runApp(MyApp());
+    });
+  </script>
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.11.1/firebase-app.js';
+    import { getFirestore } from 'https://www.gstatic.com/firebasejs/10.11.1/firebase-firestore.js';
+    import { getStorage } from 'https://www.gstatic.com/firebasejs/10.11.1/firebase-storage.js';
+
+    const firebaseConfig = {
+  apiKey: "AIzaSyBpIrCA8v5_JFWoSkKRdRTM0sEVGj4YecM",
+  authDomain: "stock-managament-new.firebaseapp.com",
+  projectId: "stock-managament-new",
+  storageBucket: "stock-managament-new.firebasestorage.app",
+  messagingSenderId: "645642131883",
+  appId: "1:645642131883:web:5d0d6343aabe97291f9aee",
+  measurementId: "G-NGFYKF85MP"
+};
+firebase.initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const storage = getStorage(app);
+  </script>
+  <script>
+    const serviceWorkerVersion = "4208083055";
+  </script>
+  <script src="flutter.js" defer></script>
+</head>
+<body>
+  <script>
+    window.addEventListener('load', function(ev) {
+      // Download main.dart.js
+      _flutter.loader.loadEntrypoint({
+        serviceWorker: {
+          serviceWorkerVersion: serviceWorkerVersion,
+        },
+        onEntrypointLoaded: function(engineInitializer) {
+          engineInitializer.initializeEngine().then(function(appRunner) {
+            appRunner.runApp();
+          });
+        }
+      });
+    });
+  </script>
+</body>
+</html>
