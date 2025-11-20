@@ -29,7 +29,8 @@ class _AttendanceViewState extends State<AttendanceView> {
       appBar: AppBar(
         title: Text(
           'attendance_control'.tr,
-          style: TextStyle(fontWeight: FontWeight.bold, color: ColorConstants.kPrimaryColor),
+          style: TextStyle(
+              fontWeight: FontWeight.bold, color: ColorConstants.kPrimaryColor),
         ),
         shadowColor: Colors.transparent,
         foregroundColor: Colors.transparent,
@@ -42,10 +43,12 @@ class _AttendanceViewState extends State<AttendanceView> {
             icon: const Icon(HugeIcons.strokeRoundedChart02, size: 18),
             label: Text(
               'view_graph'.tr,
-              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
+              style:
+                  TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
             ), // Assuming 'view_graph' is a translation key
             onPressed: () {
-              final isSingleDay = controller.selectedDateRange.value.duration.inDays == 0;
+              final isSingleDay =
+                  controller.selectedDateRange.value.duration.inDays == 0;
               Get.to(() => AttendanceChartView(
                     employees: controller.filteredEmployees,
                     isSingleDay: isSingleDay,
@@ -64,7 +67,8 @@ class _AttendanceViewState extends State<AttendanceView> {
             icon: const Icon(HugeIcons.strokeRoundedDoc02, size: 18),
             label: Text(
               'export_to_excel'.tr,
-              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
+              style:
+                  TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
             ),
             onPressed: () {
               controller.exportToExcel();
@@ -90,6 +94,7 @@ class _AttendanceViewState extends State<AttendanceView> {
               controller.searchController.clear();
             },
           ),
+          _buildLocationFilter(),
           Expanded(child: _buildEmployeeList()),
           _buildStatistics()
         ],
@@ -108,9 +113,18 @@ class _AttendanceViewState extends State<AttendanceView> {
         () => Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
-            _buildStatItem('total_employees'.tr, controller.totalEmployeesCount.value.toString(), Colors.blue.shade800),
-            _buildStatItem('at_work'.tr, controller.employeesAtWorkCount.value.toString(), Colors.green.shade800),
-            _buildStatItem('not_at_work'.tr, controller.employeesNotAtWorkCount.value.toString(), Colors.red.shade800),
+            _buildStatItem(
+                'total_employees'.tr,
+                controller.totalEmployeesCount.value.toString(),
+                Colors.blue.shade800),
+            _buildStatItem(
+                'at_work'.tr,
+                controller.employeesAtWorkCount.value.toString(),
+                Colors.green.shade800),
+            _buildStatItem(
+                'not_at_work'.tr,
+                controller.employeesNotAtWorkCount.value.toString(),
+                Colors.red.shade800),
           ],
         ),
       ),
@@ -140,13 +154,70 @@ class _AttendanceViewState extends State<AttendanceView> {
     );
   }
 
+  Widget _buildLocationFilter() {
+    final locations = [
+      {'id': 'dostluk_akbulut', 'name': 'Dostluk Akbulut'},
+      {'id': 'dostluk_tm_gips', 'name': 'Dostluk TM - Gips'},
+      {'id': 'merkez', 'name': 'Merkez'},
+    ];
+
+    return Container(
+      height: 50,
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: locations.length,
+        itemBuilder: (context, index) {
+          final location = locations[index];
+
+          return Padding(
+            padding: EdgeInsets.only(left: index == 0 ? 16.0 : 4.0, right: 4.0),
+            child: Obx(() {
+              final isSelected =
+                  controller.selectedLocation.value == location['id'];
+
+              return ChoiceChip(
+                label: Text(location['name']!),
+                selected: isSelected,
+                onSelected: (_) => controller.selectLocation(location['id']!),
+                selectedColor: ColorConstants.kPrimaryColor2,
+                backgroundColor: ColorConstants.whiteColor,
+                shadowColor: Colors.transparent,
+                surfaceTintColor: Colors.transparent,
+                labelStyle: TextStyle(
+                  color: isSelected
+                      ? ColorConstants.whiteColor
+                      : ColorConstants.greyColor,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                ),
+                side: BorderSide(
+                  color: isSelected
+                      ? Colors.transparent
+                      : ColorConstants.greyColor.withOpacity(0.4),
+                  width: 1.5,
+                ),
+                showCheckmark: false,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              );
+            }),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildDateFilterMenu() {
     return Obx(() {
       String text;
       final filter = controller.selectedFilterName.value;
       if (filter == 'custom') {
         final range = controller.selectedDateRange.value;
-        text = "${DateFormat('dd/MM').format(range.start)} - ${DateFormat('dd/MM/yy').format(range.end)}";
+        text =
+            "${DateFormat('dd/MM').format(range.start)} - ${DateFormat('dd/MM/yy').format(range.end)}";
       } else {
         text = filter.tr;
       }
@@ -164,17 +235,31 @@ class _AttendanceViewState extends State<AttendanceView> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(text, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
+              Text(text,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, color: Colors.black87)),
               const SizedBox(width: 8),
               const Icon(Icons.arrow_drop_down, color: Colors.black87),
             ],
           ),
         ),
         itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-          PopupMenuItem<String>(value: 'today', child: Text('today'.tr, style: TextStyle(fontWeight: FontWeight.bold))),
-          PopupMenuItem<String>(value: 'this_week', child: Text('this_week'.tr, style: TextStyle(fontWeight: FontWeight.bold))),
-          PopupMenuItem<String>(value: 'this_month', child: Text('this_month'.tr, style: TextStyle(fontWeight: FontWeight.bold))),
-          PopupMenuItem<String>(value: 'custom', child: Text('custom_range'.tr, style: TextStyle(fontWeight: FontWeight.bold))),
+          PopupMenuItem<String>(
+              value: 'today',
+              child: Text('today'.tr,
+                  style: TextStyle(fontWeight: FontWeight.bold))),
+          PopupMenuItem<String>(
+              value: 'this_week',
+              child: Text('this_week'.tr,
+                  style: TextStyle(fontWeight: FontWeight.bold))),
+          PopupMenuItem<String>(
+              value: 'this_month',
+              child: Text('this_month'.tr,
+                  style: TextStyle(fontWeight: FontWeight.bold))),
+          PopupMenuItem<String>(
+              value: 'custom',
+              child: Text('custom_range'.tr,
+                  style: TextStyle(fontWeight: FontWeight.bold))),
         ],
       );
     });
@@ -189,7 +274,8 @@ class _AttendanceViewState extends State<AttendanceView> {
         return Center(child: Text('no_records_found'.tr));
       }
 
-      final isSingleDay = controller.selectedDateRange.value.duration.inDays == 0;
+      final isSingleDay =
+          controller.selectedDateRange.value.duration.inDays == 0;
 
       return ListView.builder(
         itemCount: controller.filteredEmployees.length,
@@ -211,19 +297,30 @@ class _AttendanceViewState extends State<AttendanceView> {
       margin: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
       elevation: 0,
       color: Colors.white54.withOpacity(0.05),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: ColorConstants.kPrimaryColor2.withOpacity(0.1))),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: BorderSide(
+              color: ColorConstants.kPrimaryColor2.withOpacity(0.1))),
       child: ListTile(
         leading: CircleAvatar(
           radius: 25,
           backgroundColor: ColorConstants.kPrimaryColor2.withOpacity(0.1),
-          backgroundImage: employee.imageUrl != null ? NetworkImage(employee.imageUrl!) : null,
-          child: employee.imageUrl == null ? Icon(HugeIcons.strokeRoundedUser03, color: Colors.black) : null,
+          backgroundImage: employee.imageUrl != null
+              ? NetworkImage(employee.imageUrl!)
+              : null,
+          child: employee.imageUrl == null
+              ? Icon(HugeIcons.strokeRoundedUser03, color: Colors.black)
+              : null,
         ),
         title: Row(
           children: [
-            Text(employee.name.toTitleCase(), style: const TextStyle(fontWeight: FontWeight.bold)),
+            Text(employee.name.toTitleCase(),
+                style: const TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(width: 8),
-            if (controller.shouldShowLiveStatus) employee.isCurrentlyAtWork ? _buildAtWorkIndicator() : _buildNotAtWorkIndicator(),
+            if (controller.shouldShowLiveStatus)
+              employee.isCurrentlyAtWork
+                  ? _buildAtWorkIndicator()
+                  : _buildNotAtWorkIndicator(),
           ],
         ),
         subtitle: _getStatusWidget(status),
@@ -236,28 +333,42 @@ class _AttendanceViewState extends State<AttendanceView> {
       margin: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
       elevation: 0,
       color: Colors.white54.withOpacity(0.05),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: ColorConstants.kPrimaryColor2.withOpacity(0.1))),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: BorderSide(
+              color: ColorConstants.kPrimaryColor2.withOpacity(0.1))),
       child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent, splashColor: Colors.transparent, hoverColor: Colors.transparent),
+        data: Theme.of(context).copyWith(
+            dividerColor: Colors.transparent,
+            splashColor: Colors.transparent,
+            hoverColor: Colors.transparent),
         child: ExpansionTile(
           leading: CircleAvatar(
             radius: 25,
             backgroundColor: ColorConstants.kPrimaryColor2.withOpacity(0.1),
-            backgroundImage: employee.imageUrl != null ? NetworkImage(employee.imageUrl!) : null,
-            child: employee.imageUrl == null ? Icon(HugeIcons.strokeRoundedUser03, color: Colors.black) : null,
+            backgroundImage: employee.imageUrl != null
+                ? NetworkImage(employee.imageUrl!)
+                : null,
+            child: employee.imageUrl == null
+                ? Icon(HugeIcons.strokeRoundedUser03, color: Colors.black)
+                : null,
           ),
           title: Row(
             children: [
-              Text(employee.name.toTitleCase(), style: const TextStyle(fontWeight: FontWeight.bold)),
+              Text(employee.name.toTitleCase(),
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(width: 8),
               if (controller.shouldShowLiveStatus) ...[
-                employee.isCurrentlyAtWork ? _buildAtWorkIndicator() : _buildNotAtWorkIndicator(),
+                employee.isCurrentlyAtWork
+                    ? _buildAtWorkIndicator()
+                    : _buildNotAtWorkIndicator(),
                 const SizedBox(width: 8),
               ],
               _buildSuccessRateIndicator(employee.successRate),
             ],
           ),
-          subtitle: Text("ID: ${employee.userId} | ${'total_work_duration'.tr}: ${employee.totalWorkDuration.inHours}h ${employee.totalWorkDuration.inMinutes.remainder(60)}m"),
+          subtitle: Text(
+              "ID: ${employee.userId} | ${'total_work_duration'.tr}: ${employee.totalWorkDuration.inHours}h ${employee.totalWorkDuration.inMinutes.remainder(60)}m"),
           children: employee.dailyStatuses.map((status) {
             var locale = Get.locale?.languageCode;
             if (locale == 'tk') {
@@ -266,7 +377,11 @@ class _AttendanceViewState extends State<AttendanceView> {
             return ListTile(
               title: Text(
                 DateFormat('dd/MM/yyyy (EEEE)', locale).format(status.date),
-                style: TextStyle(color: status.isWeekend ? Colors.purple.shade700 : Colors.black87, fontWeight: FontWeight.w500),
+                style: TextStyle(
+                    color: status.isWeekend
+                        ? Colors.purple.shade700
+                        : Colors.black87,
+                    fontWeight: FontWeight.w500),
               ),
               trailing: _getStatusWidget(status),
             );
@@ -377,7 +492,9 @@ class _AttendanceViewState extends State<AttendanceView> {
 
         final now = DateTime.now();
         final today = DateTime(now.year, now.month, now.day);
-        final isToday = status.date.year == today.year && status.date.month == today.month && status.date.day == today.day;
+        final isToday = status.date.year == today.year &&
+            status.date.month == today.month &&
+            status.date.day == today.day;
 
         String departureText;
         if (status.departureTime != null) {
@@ -396,7 +513,8 @@ class _AttendanceViewState extends State<AttendanceView> {
           }
         }
 
-        text = '${'arrival'.tr}: ${DateFormat('HH:mm').format(status.arrivalTime!)} - ${'departure'.tr}: $departureText$durationText';
+        text =
+            '${'arrival'.tr}: ${DateFormat('HH:mm').format(status.arrivalTime!)} - ${'departure'.tr}: $departureText$durationText';
         color = Colors.green.shade800;
         break;
       case DailyStatusType.absent:
@@ -410,6 +528,7 @@ class _AttendanceViewState extends State<AttendanceView> {
         fontWeight = FontWeight.bold;
         break;
     }
-    return Text(text, style: TextStyle(color: color, fontWeight: fontWeight, fontSize: 12));
+    return Text(text,
+        style: TextStyle(color: color, fontWeight: fontWeight, fontSize: 12));
   }
 }

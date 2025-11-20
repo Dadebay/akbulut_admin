@@ -7,13 +7,19 @@ import 'package:http/http.dart' as http;
 class DahuaService {
   final String _path = "/api/records";
 
-  Future<List<AttendanceRecord>> fetchAttendanceRecords(DateTime startTime, DateTime endTime) async {
+  Future<List<AttendanceRecord>> fetchAttendanceRecords(
+    DateTime startTime,
+    DateTime endTime, {
+    String location = 'merkez',
+  }) async {
     final int startTimestamp = startTime.millisecondsSinceEpoch ~/ 1000;
     final int endTimestamp = endTime.millisecondsSinceEpoch ~/ 1000;
 
-    final url = Uri.parse('${ApiConstants.serverBaseUrl}$_path').replace(queryParameters: {
+    final url = Uri.parse('${ApiConstants.serverBaseUrl}$_path')
+        .replace(queryParameters: {
       'StartTime': startTimestamp.toString(),
       'EndTime': endTimestamp.toString(),
+      'location': location,
     });
     print("Sunucuya istek gönderiliyor: $url");
     try {
@@ -22,7 +28,8 @@ class DahuaService {
       if (response.statusCode == 200) {
         return _parseResponse(response.body);
       } else {
-        throw Exception('Sunucudan hata alındı: ${response.statusCode} - ${response.body}');
+        throw Exception(
+            'Sunucudan hata alındı: ${response.statusCode} - ${response.body}');
       }
     } on TimeoutException catch (e) {
       print("İstek zaman aşımına uğradı: $e");
@@ -55,14 +62,16 @@ class DahuaService {
     recordsMap.forEach((index, data) {
       try {
         if (data['UserID'] == null || data['CreateTime'] == null) {
-          print("Skipping record $index due to missing UserID or CreateTime. Data: $data");
+          print(
+              "Skipping record $index due to missing UserID or CreateTime. Data: $data");
           return;
         }
 
         final record = AttendanceRecord(
           userId: data['UserID']!,
           cardName: data['CardName'] ?? 'N/A',
-          createTime: DateTime.fromMillisecondsSinceEpoch(int.parse(data['CreateTime']!) * 1000),
+          createTime: DateTime.fromMillisecondsSinceEpoch(
+              int.parse(data['CreateTime']!) * 1000),
           type: (data['Type'] == 'Entry') ? EventType.entry : EventType.unknown,
           roomNumber: data['RoomNumber'],
         );

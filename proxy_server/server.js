@@ -7,7 +7,12 @@ const path = require('path'); // <-- YENİ SATIR: path modülünü dahil et
 
 const app = express();
 // istek yapmasına izin verir.
-app.use(cors());
+app.use(cors({
+    origin: '*',
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    preflightContinue: false,
+    optionsSuccessStatus: 204
+}));
 
 // --- 2. ADIM: STATİK DOSYA SUNUCUSU (Resimler İçin En Önemli Kısım) ---
 // Bu satır, 'public' klasörünü dışarıya açmamızı sağlar.
@@ -34,10 +39,10 @@ app.get('/api/products', async (req, res) => {
     try {
         // 1. Frontend'den gönderilen 'ammarNo' query parametresini alıyoruz.
         // Eğer bir parametre gönderilmezse, varsayılan olarak '90' kullanılacak.
-        const ammarNo = req.query.ammarNo || '90'; 
+        const ammarNo = req.query.ammarNo || '90';
 
         console.log(`--- /api/products isteği geldi (Ambar No: ${ammarNo}), SQL Server'a bağlanılıyor... ---`);
-        
+
         await sql.connect(sqlConfig);
         const request = new sql.Request();
 
@@ -61,21 +66,51 @@ app.get('/api/products', async (req, res) => {
 
 
 // =================================================================
-// ===== MEVCUT DAHUA VE PROXY KODUNUZ AŞAĞIDA DEĞİŞTİRİLMEDİ ======
+// ===== DAHUA DEVICE CONFIGURATIONS FOR MULTIPLE LOCATIONS ======
 // =================================================================
-// ... (geri kalan kodunuz aynı kalacak)
-const devices = [
-    {
-        DAHUA_BASE_URL: 'http://172.16.14.104',
-        DAHUA_USERNAME: 'admin',
-        DAHUA_PASSWORD: 'yoda12345',
-    },
-    {
-        DAHUA_BASE_URL: 'http://172.16.14.105',
-        DAHUA_USERNAME: 'admin',
-        DAHUA_PASSWORD: 'admin123',
-    }
-];
+
+// Device groups for different locations
+const deviceGroups = {
+    'merkez': [
+        {
+            DAHUA_BASE_URL: 'http://172.16.14.104',
+            DAHUA_USERNAME: 'admin',
+            DAHUA_PASSWORD: 'yoda12345',
+        },
+        {
+            DAHUA_BASE_URL: 'http://172.16.14.105',
+            DAHUA_USERNAME: 'admin',
+            DAHUA_PASSWORD: 'admin123',
+        }
+    ],
+    'dostluk_akbulut': [
+        {
+            DAHUA_BASE_URL: 'http://172.18.11.229',
+            DAHUA_USERNAME: 'admin',
+            DAHUA_PASSWORD: 'nvr12345',
+        },
+        {
+            DAHUA_BASE_URL: 'http://172.18.11.228',
+            DAHUA_USERNAME: 'admin',
+            DAHUA_PASSWORD: 'nvr12345',
+        }
+    ],
+    'dostluk_tm_gips': [
+        {
+            DAHUA_BASE_URL: 'http://172.18.11.232',
+            DAHUA_USERNAME: 'admin',
+            DAHUA_PASSWORD: 'nvr12345',
+        },
+        {
+            DAHUA_BASE_URL: 'http://172.18.11.236',
+            DAHUA_USERNAME: 'admin',
+            DAHUA_PASSWORD: 'nvr12345',
+        }
+    ]
+};
+
+// Default devices (for backward compatibility)
+const devices = deviceGroups['merkez'];
 
 const DAHUA_API_PATH = '/cgi-bin/recordFinder.cgi';
 
@@ -168,13 +203,20 @@ function formatRecordsToDahuaResponse(records) {
 }
 
 app.get('/api/records', async (req, res) => {
-    const { StartTime, EndTime } = req.query;
+    const { StartTime, EndTime, location } = req.query;
     if (!StartTime || !EndTime) {
         return res.status(400).send('StartTime ve EndTime gereklidir.');
     }
 
+    // Determine which device group to use based on location parameter
+    // Default to 'merkez' if no location is specified
+    const selectedLocation = location || 'merkez';
+    const selectedDevices = deviceGroups[selectedLocation] || deviceGroups['merkez'];
+
+    console.log(`Fetching records for location: ${selectedLocation}`);
+
     try {
-        const promises = devices.map(device => fetchRecordsFromDevice(device, StartTime, EndTime));
+        const promises = selectedDevices.map(device => fetchRecordsFromDevice(device, StartTime, EndTime));
         const results = await Promise.all(promises);
 
         let allRecords = [];

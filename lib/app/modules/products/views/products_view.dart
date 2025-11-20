@@ -4,6 +4,7 @@ import 'package:akbulut_admin/app/product/init/packages.dart';
 import 'package:akbulut_admin/app/product/widgets/search_widget.dart';
 import 'package:get/get.dart';
 import 'package:hugeicons/hugeicons.dart';
+import 'package:intl/intl.dart';
 
 import '../controller/product_controller.dart';
 import '../models/product_model.dart';
@@ -33,6 +34,7 @@ class _ProductViewState extends State<ProductView> {
               controller.searchController.clear();
             },
           ),
+          _buildStockSummary(),
           _buildWarehouseFilter(context),
           Expanded(
             child: Obx(() {
@@ -54,8 +56,156 @@ class _ProductViewState extends State<ProductView> {
     );
   }
 
+  Widget _buildStockSummary() {
+    return Obx(() {
+      if (controller.filteredProductList.isEmpty || controller.searchController.text.isEmpty) {
+        return const SizedBox.shrink();
+      }
+
+      // Stokları birime göre grupla ve topla
+      final Map<String, double> stockByUnit = {};
+
+      for (var product in controller.filteredProductList) {
+        final unit = product.unitCode.isNotEmpty ? product.unitCode : product.unitName;
+        final stock = double.tryParse(product.stockOnHand) ?? 0;
+
+        if (unit.isNotEmpty) {
+          stockByUnit[unit] = (stockByUnit[unit] ?? 0) + stock;
+        }
+      }
+
+      if (stockByUnit.isEmpty) {
+        return const SizedBox.shrink();
+      }
+
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              ColorConstants.kPrimaryColor2.withOpacity(0.1),
+              ColorConstants.kPrimaryColor2.withOpacity(0.05),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: ColorConstants.kPrimaryColor2.withOpacity(0.3),
+            width: 1.5,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                HugeIcon(
+                  icon: HugeIcons.strokeRoundedPackage,
+                  size: 20,
+                  color: ColorConstants.kPrimaryColor2,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Toplam Stok',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: ColorConstants.blackColor,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: ColorConstants.kPrimaryColor2,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    '${controller.filteredProductList.length} ürün',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              children: stockByUnit.entries.map((entry) {
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: ColorConstants.kPrimaryColor2.withOpacity(0.2),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _formatNumber(entry.value),
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: ColorConstants.kPrimaryColor2,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        entry.key,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: ColorConstants.greyColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+        ),
+      );
+    });
+  }
+
+  String _formatNumber(double value) {
+    // Sayıyı formatla: 14657.6 -> "14 657.6"
+    final parts = value.toStringAsFixed(1).split('.');
+    final integerPart = parts[0];
+    final decimalPart = parts.length > 1 ? parts[1] : '0';
+
+    // Binlik ayırıcı ekle
+    String formattedInteger = '';
+    int count = 0;
+    for (int i = integerPart.length - 1; i >= 0; i--) {
+      if (count > 0 && count % 3 == 0) {
+        formattedInteger = ' $formattedInteger';
+      }
+      formattedInteger = integerPart[i] + formattedInteger;
+      count++;
+    }
+
+    return '$formattedInteger.$decimalPart';
+  }
+
   Widget _buildWarehouseFilter(BuildContext context) {
-    // ... Bu kısım aynı kaldı ...
     return Obx(() {
       if (controller.warehouseList.isEmpty) {
         return const SizedBox.shrink();
@@ -63,38 +213,261 @@ class _ProductViewState extends State<ProductView> {
       return Container(
         height: 50,
         padding: const EdgeInsets.symmetric(vertical: 8.0),
-        child: ScrollConfiguration(
-          behavior: AppScrollBehavior(),
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            itemCount: controller.warehouseList.length,
-            itemBuilder: (context, index) {
-              final warehouse = controller.warehouseList[index];
-              return Padding(
-                padding: EdgeInsets.only(left: index == 0 ? 16.0 : 4.0, right: 4.0),
-                child: Obx(() {
-                  return _buildFilterChip(
-                    label: warehouse.name,
-                    isSelected: controller.selectedWarehouse.value?.id == warehouse.id,
-                    onSelected: (_) => controller.selectWarehouse(warehouse),
-                  );
-                }),
-              );
-            },
-          ),
+        child: Row(
+          children: [
+            Expanded(
+              child: ScrollConfiguration(
+                behavior: AppScrollBehavior(),
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: controller.warehouseList.length,
+                  itemBuilder: (context, index) {
+                    final warehouse = controller.warehouseList[index];
+                    return Padding(
+                      padding: EdgeInsets.only(left: index == 0 ? 16.0 : 4.0, right: 4.0),
+                      child: Obx(() {
+                        final productCount = controller.warehouseProductCounts[warehouse.id];
+                        return _buildFilterChip(
+                          label: warehouse.name,
+                          isSelected: controller.selectedWarehouse.value?.id == warehouse.id,
+                          onSelected: (_) => controller.selectWarehouse(warehouse),
+                          productCount: productCount,
+                        );
+                      }),
+                    );
+                  },
+                ),
+              ),
+            ),
+            _buildProductTypeDropdown(),
+            _buildCategoryDropdown()
+          ],
         ),
       );
     });
+  }
+
+  Widget _buildProductTypeDropdown() {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8.0, left: 8.0),
+      child: Obx(() {
+        return SizedBox(
+          width: 150,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12.0),
+            decoration: BoxDecoration(
+              color: ColorConstants.whiteColor,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: ColorConstants.greyColor.withOpacity(0.4),
+                width: 1.5,
+              ),
+            ),
+            child: DropdownButton<String>(
+              isExpanded: true,
+              value: controller.selectedProductType.value,
+              hint: Text(
+                'Ürün Tipi',
+                style: TextStyle(
+                  color: ColorConstants.greyColor,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              icon: HugeIcon(
+                icon: HugeIcons.strokeRoundedArrowDown01,
+                size: 16,
+                color: ColorConstants.greyColor,
+              ),
+              underline: const SizedBox(),
+              borderRadius: BorderRadius.circular(10),
+              dropdownColor: ColorConstants.whiteColor,
+              items: [
+                DropdownMenuItem<String>(
+                  value: null,
+                  child: Text(
+                    'Haryt gornusi',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: ColorConstants.greyColor,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                DropdownMenuItem<String>(
+                  value: '150.',
+                  child: Text(
+                    'Çig Mallar (150)',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: ColorConstants.blackColor,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                DropdownMenuItem<String>(
+                  value: '151.',
+                  child: Text(
+                    'Ýarym Önüm (151)',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: ColorConstants.blackColor,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                DropdownMenuItem<String>(
+                  value: '152.',
+                  child: Text(
+                    'Önümler (152)',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: ColorConstants.blackColor,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                DropdownMenuItem<String>(
+                  value: '153.',
+                  child: Text(
+                    'Satylyk Harytlar (153)',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: ColorConstants.blackColor,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                DropdownMenuItem<String>(
+                  value: '255.',
+                  child: Text(
+                    'Demir Başlar (255)',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: ColorConstants.blackColor,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+              onChanged: (value) {
+                controller.selectProductType(value);
+              },
+            ),
+          ),
+        );
+      }),
+    );
+  }
+
+  Widget _buildCategoryDropdown() {
+    return Padding(
+      padding: const EdgeInsets.only(right: 16.0, left: 8.0),
+      child: Obx(() {
+        return Container(
+          width: 150,
+          padding: const EdgeInsets.symmetric(horizontal: 12.0),
+          decoration: BoxDecoration(
+            color: ColorConstants.whiteColor,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: ColorConstants.greyColor.withOpacity(0.4),
+              width: 1.5,
+            ),
+          ),
+          child: DropdownButton<String>(
+            isExpanded: true,
+            value: controller.selectedCategory.value,
+            hint: Text(
+              'Kategori seç',
+              style: TextStyle(
+                color: ColorConstants.greyColor,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            icon: HugeIcon(
+              icon: HugeIcons.strokeRoundedArrowDown01,
+              size: 16,
+              color: ColorConstants.greyColor,
+            ),
+            underline: const SizedBox(),
+            borderRadius: BorderRadius.circular(10),
+            dropdownColor: ColorConstants.whiteColor,
+            items: [
+              DropdownMenuItem<String>(
+                value: null,
+                child: Text(
+                  'Haryt Groupları',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: ColorConstants.greyColor,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              ...controller.availableCategories.map((category) {
+                return DropdownMenuItem<String>(
+                  value: category,
+                  child: Text(
+                    category,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: ColorConstants.blackColor,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                );
+              }),
+            ],
+            onChanged: (value) {
+              controller.selectCategory(value);
+            },
+          ),
+        );
+      }),
+    );
   }
 
   Widget _buildFilterChip({
     required String label,
     required bool isSelected,
     required ValueChanged<bool> onSelected,
+    int? productCount,
   }) {
-    // ... Bu kısım aynı kaldı ...
     return ChoiceChip(
-      label: Text(label),
+      label: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label),
+          if (productCount != null && productCount > 0) ...[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: isSelected ? ColorConstants.whiteColor : ColorConstants.kPrimaryColor2,
+                borderRadius: BorderRadius.circular(5),
+              ),
+              child: Text(
+                '$productCount',
+                style: TextStyle(
+                  color: isSelected ? ColorConstants.kPrimaryColor2 : ColorConstants.whiteColor,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
       selected: isSelected,
       onSelected: onSelected,
       selectedColor: ColorConstants.kPrimaryColor2,
@@ -110,7 +483,7 @@ class _ProductViewState extends State<ProductView> {
         width: 1.5,
       ),
       showCheckmark: false,
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      padding: EdgeInsets.only(left: 16, right: productCount != null && productCount > 0 ? 0 : 10, top: 8, bottom: 8),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
       ),
@@ -145,29 +518,14 @@ class _ProductViewState extends State<ProductView> {
                 HugeIcon(icon: HugeIcons.strokeRoundedGridView, size: 16, color: ColorConstants.blackColor),
               ],
             )),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          child: ElevatedButton.icon(
-            icon: HugeIcon(icon: HugeIcons.strokeRoundedAddCircle, size: 18, color: Colors.black),
-            label: Text('add_product'.tr, style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black)),
-            onPressed: () {},
-            style: ElevatedButton.styleFrom(
-              elevation: 0,
-              shadowColor: Colors.white,
-              overlayColor: Colors.white,
-              backgroundColor: Colors.white,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              padding: const EdgeInsets.only(left: 12, right: 12, top: 12, bottom: 12),
-            ),
-          ),
-        ),
+        SizedBox(
+          width: 20,
+        )
       ],
     );
   }
 
   Widget _buildListView(ProductController controller) {
-    // ... Bu kısım aynı kaldı ...
     return Obx(() => ListView.builder(
           itemCount: controller.filteredProductList.length,
           itemBuilder: (context, index) {
@@ -199,6 +557,8 @@ class _ProductViewState extends State<ProductView> {
   Widget _buildProductListCard(ProductController controller, ProductModel product) {
     return GestureDetector(
       onTap: () {
+        print(product.imageUrl);
+        print(product.variantName);
         // controller.showProductDetailsDialog(product);
       },
       child: Container(
@@ -250,8 +610,12 @@ class _ProductViewState extends State<ProductView> {
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(product.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: SelectableText(product.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  ),
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 4),
                     child: Text(
@@ -261,11 +625,10 @@ class _ProductViewState extends State<ProductView> {
                       style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
                     ),
                   ),
-                  Text(
+                  SelectableText(
                     product.code,
                     maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
                   ),
                 ],
               ),
@@ -323,11 +686,22 @@ class _ProductViewState extends State<ProductView> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(product.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  SelectableText(product.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16), maxLines: 1),
                   const SizedBox(height: 4),
                   Text(product.variantName, style: TextStyle(color: Colors.grey.shade600, fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
                   const SizedBox(height: 8),
-                  _buildStockIndicator(product.stockOnHand, product.unitCode, isSmall: true),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: SelectableText(
+                          product.code,
+                          maxLines: 2,
+                          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                        ),
+                      ),
+                      _buildStockIndicator(product.stockOnHand, product.unitCode, isSmall: true),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -349,7 +723,7 @@ class _ProductViewState extends State<ProductView> {
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
-        text,
+        _formatNumber(double.parse(stock)) + ' ' + unit,
         style: TextStyle(
           color: color,
           fontWeight: FontWeight.bold,

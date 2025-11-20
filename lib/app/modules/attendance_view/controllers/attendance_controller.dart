@@ -32,11 +32,15 @@ class AttendanceController extends GetxController {
 
   var selectedDateRange = Rx<DateTimeRange>(
     DateTimeRange(
-      start: DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day),
+      start: DateTime(
+          DateTime.now().year, DateTime.now().month, DateTime.now().day),
       end: DateTime.now(),
     ),
   );
   var selectedFilterName = 'today'.obs;
+
+  // Location selection for different offices
+  var selectedLocation = 'merkez'.obs;
 
   bool get shouldShowLiveStatus {
     final now = DateTime.now();
@@ -53,9 +57,11 @@ class AttendanceController extends GetxController {
     selectedYear.value = year;
     final now = DateTime.now();
     if (year == now.year) {
-      selectedDateRange.value = DateTimeRange(start: DateTime(year, 1, 1), end: now);
+      selectedDateRange.value =
+          DateTimeRange(start: DateTime(year, 1, 1), end: now);
     } else {
-      selectedDateRange.value = DateTimeRange(start: DateTime(year, 1, 1), end: DateTime(year, 12, 31));
+      selectedDateRange.value = DateTimeRange(
+          start: DateTime(year, 1, 1), end: DateTime(year, 12, 31));
     }
     fetchData();
   }
@@ -70,12 +76,17 @@ class AttendanceController extends GetxController {
       var currentStart = range.start;
 
       while (currentStart.isBefore(range.end)) {
-        var currentEnd = currentStart.add(const Duration(days: maxDurationDays));
+        var currentEnd =
+            currentStart.add(const Duration(days: maxDurationDays));
         if (currentEnd.isAfter(range.end)) {
           currentEnd = range.end;
         }
 
-        final chunkRecords = await _dahuaService.fetchAttendanceRecords(currentStart, currentEnd);
+        final chunkRecords = await _dahuaService.fetchAttendanceRecords(
+          currentStart,
+          currentEnd,
+          location: selectedLocation.value,
+        );
         allRecords.addAll(chunkRecords);
 
         currentStart = currentEnd.add(const Duration(days: 1));
@@ -103,15 +114,21 @@ class AttendanceController extends GetxController {
     final todayStart = DateTime(now.year, now.month, now.day);
     final todayEnd = todayStart.add(const Duration(days: 1));
 
-    final todayRecords = await _dahuaService.fetchAttendanceRecords(todayStart, todayEnd);
-    final todayUserRecords = groupBy(todayRecords, (AttendanceRecord r) => r.userId);
+    final todayRecords = await _dahuaService.fetchAttendanceRecords(
+      todayStart,
+      todayEnd,
+      location: selectedLocation.value,
+    );
+    final todayUserRecords =
+        groupBy(todayRecords, (AttendanceRecord r) => r.userId);
 
     for (var employee in allEmployees) {
       final userTodayRecords = todayUserRecords[employee.userId];
       bool isAtWork = false;
       if (userTodayRecords != null && userTodayRecords.isNotEmpty) {
         userTodayRecords.sort((a, b) => a.createTime.compareTo(b.createTime));
-        final timeSpan = userTodayRecords.last.createTime.difference(userTodayRecords.first.createTime);
+        final timeSpan = userTodayRecords.last.createTime
+            .difference(userTodayRecords.first.createTime);
 
         if (timeSpan.inMinutes < 40) {
           // Single event, assume arrival if before 2 PM
@@ -138,12 +155,16 @@ class AttendanceController extends GetxController {
     userRecords.forEach((userId, userSpecificRecords) {
       if (userSpecificRecords.isNotEmpty) {
         final dailyStatuses = <DailyStatus>[];
-        final recordsByDay = groupBy(userSpecificRecords, (AttendanceRecord r) => DateTime(r.createTime.year, r.createTime.month, r.createTime.day));
+        final recordsByDay = groupBy(
+            userSpecificRecords,
+            (AttendanceRecord r) => DateTime(
+                r.createTime.year, r.createTime.month, r.createTime.day));
 
         for (var i = 0; i <= range.duration.inDays; i++) {
           final date = range.start.add(Duration(days: i));
           final dayRecords = recordsByDay[date];
-          final bool isWeekend = date.weekday == DateTime.saturday || date.weekday == DateTime.sunday;
+          final bool isWeekend = date.weekday == DateTime.saturday ||
+              date.weekday == DateTime.sunday;
 
           DailyStatus status;
           if (dayRecords != null && dayRecords.isNotEmpty) {
@@ -152,7 +173,8 @@ class AttendanceController extends GetxController {
             DateTime? arrival;
             DateTime? departure;
 
-            final timeSpan = dayRecords.last.createTime.difference(dayRecords.first.createTime);
+            final timeSpan = dayRecords.last.createTime
+                .difference(dayRecords.first.createTime);
 
             if (timeSpan.inMinutes < 40) {
               final singleEventTime = dayRecords.first.createTime;
@@ -161,7 +183,8 @@ class AttendanceController extends GetxController {
                 departure = null;
               } else {
                 departure = singleEventTime;
-                arrival = DateTime(singleEventTime.year, singleEventTime.month, singleEventTime.day, 9, 0);
+                arrival = DateTime(singleEventTime.year, singleEventTime.month,
+                    singleEventTime.day, 9, 0);
               }
             } else {
               arrival = dayRecords.first.createTime;
@@ -180,9 +203,11 @@ class AttendanceController extends GetxController {
               } else {
                 DateTime defaultDeparture;
                 if (date.weekday >= 1 && date.weekday <= 5) {
-                  defaultDeparture = DateTime(date.year, date.month, date.day, 18, 0);
+                  defaultDeparture =
+                      DateTime(date.year, date.month, date.day, 18, 0);
                 } else {
-                  defaultDeparture = DateTime(date.year, date.month, date.day, 13, 0);
+                  defaultDeparture =
+                      DateTime(date.year, date.month, date.day, 13, 0);
                 }
                 duration = defaultDeparture.difference(arrival);
               }
@@ -199,7 +224,8 @@ class AttendanceController extends GetxController {
           } else {
             status = DailyStatus(
               date: date,
-              type: isWeekend ? DailyStatusType.weekend : DailyStatusType.absent,
+              type:
+                  isWeekend ? DailyStatusType.weekend : DailyStatusType.absent,
               isWeekend: isWeekend,
             );
           }
@@ -226,7 +252,11 @@ class AttendanceController extends GetxController {
           }
         }
 
-        final successRate = (totalExpectedWorkDuration.inMinutes > 0) ? (totalWorkDuration.inMinutes / totalExpectedWorkDuration.inMinutes) * 100 : 0.0;
+        final successRate = (totalExpectedWorkDuration.inMinutes > 0)
+            ? (totalWorkDuration.inMinutes /
+                    totalExpectedWorkDuration.inMinutes) *
+                100
+            : 0.0;
 
         final employee = Employee(
           userId: userId,
@@ -246,13 +276,19 @@ class AttendanceController extends GetxController {
     if (searchQuery.value.isEmpty) {
       employees = List.from(allEmployees);
     } else {
-      employees = allEmployees.where((employee) => employee.name.toLowerCase().contains(searchQuery.value.toLowerCase())).toList();
+      employees = allEmployees
+          .where((employee) => employee.name
+              .toLowerCase()
+              .contains(searchQuery.value.toLowerCase()))
+          .toList();
     }
 
     if (shouldShowLiveStatus) {
       totalEmployeesCount.value = employees.length;
-      employeesAtWorkCount.value = employees.where((e) => e.isCurrentlyAtWork).length;
-      employeesNotAtWorkCount.value = employees.where((e) => !e.isCurrentlyAtWork).length;
+      employeesAtWorkCount.value =
+          employees.where((e) => e.isCurrentlyAtWork).length;
+      employeesNotAtWorkCount.value =
+          employees.where((e) => !e.isCurrentlyAtWork).length;
     } else {
       totalEmployeesCount.value = employees.length;
       employeesAtWorkCount.value = 0;
@@ -274,7 +310,8 @@ class AttendanceController extends GetxController {
         break;
       case 'this_week':
         final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
-        final start = DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day);
+        final start =
+            DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day);
         final end = DateTime(now.year, now.month, now.day, 23, 59, 59);
         selectedDateRange.value = DateTimeRange(start: start, end: end);
         break;
@@ -287,6 +324,11 @@ class AttendanceController extends GetxController {
         _pickCustomDateRange();
         return;
     }
+    fetchData();
+  }
+
+  void selectLocation(String location) {
+    selectedLocation.value = location;
     fetchData();
   }
 
@@ -320,13 +362,19 @@ class AttendanceController extends GetxController {
       final Sheet sheet = excel[excel.getDefaultSheet()!];
       final range = selectedDateRange.value;
 
-      final CellStyle mainHeaderStyle = CellStyle(bold: true, horizontalAlign: HorizontalAlign.Center, fontSize: 14);
-      final CellStyle subHeaderStyle = CellStyle(bold: true, horizontalAlign: HorizontalAlign.Center);
+      final CellStyle mainHeaderStyle = CellStyle(
+          bold: true, horizontalAlign: HorizontalAlign.Center, fontSize: 14);
+      final CellStyle subHeaderStyle =
+          CellStyle(bold: true, horizontalAlign: HorizontalAlign.Center);
       final CellStyle boldStyle = CellStyle(bold: true);
-      final CellStyle centerStyle = CellStyle(horizontalAlign: HorizontalAlign.Center);
-      final CellStyle weekendStyle = CellStyle(backgroundColorHex: ExcelColor.fromHexString("#FFF0F0F0"));
-      final CellStyle totalLabelStyle = CellStyle(bold: true, horizontalAlign: HorizontalAlign.Right);
-      final CellStyle totalValueStyle = CellStyle(bold: true, horizontalAlign: HorizontalAlign.Center);
+      final CellStyle centerStyle =
+          CellStyle(horizontalAlign: HorizontalAlign.Center);
+      final CellStyle weekendStyle =
+          CellStyle(backgroundColorHex: ExcelColor.fromHexString("#FFF0F0F0"));
+      final CellStyle totalLabelStyle =
+          CellStyle(bold: true, horizontalAlign: HorizontalAlign.Right);
+      final CellStyle totalValueStyle =
+          CellStyle(bold: true, horizontalAlign: HorizontalAlign.Center);
 
       sheet.merge(CellIndex.indexByString('A1'), CellIndex.indexByString('F1'));
       sheet.cell(CellIndex.indexByString('A1'))
@@ -336,7 +384,8 @@ class AttendanceController extends GetxController {
       final dateFormat = DateFormat('dd/MM/yyyy');
       sheet.merge(CellIndex.indexByString('A2'), CellIndex.indexByString('F2'));
       sheet.cell(CellIndex.indexByString('A2'))
-        ..value = TextCellValue('${dateFormat.format(range.start)} - ${dateFormat.format(range.end)}')
+        ..value = TextCellValue(
+            '${dateFormat.format(range.start)} - ${dateFormat.format(range.end)}')
         ..cellStyle = subHeaderStyle;
 
       for (final employee in filteredEmployees) {
@@ -350,8 +399,12 @@ class AttendanceController extends GetxController {
           TextCellValue(employee.userId),
         ]);
         var rowIdx = sheet.maxRows - 1;
-        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: rowIdx)).cellStyle = boldStyle;
-        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: rowIdx)).cellStyle = boldStyle;
+        sheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: rowIdx))
+            .cellStyle = boldStyle;
+        sheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: rowIdx))
+            .cellStyle = boldStyle;
 
         final List<CellValue> header = [
           TextCellValue('date'.tr),
@@ -364,7 +417,10 @@ class AttendanceController extends GetxController {
         sheet.appendRow(header);
         rowIdx = sheet.maxRows - 1;
         for (var colIdx = 0; colIdx < header.length; colIdx++) {
-          sheet.cell(CellIndex.indexByColumnRow(columnIndex: colIdx, rowIndex: rowIdx)).cellStyle = boldStyle;
+          sheet
+              .cell(CellIndex.indexByColumnRow(
+                  columnIndex: colIdx, rowIndex: rowIdx))
+              .cellStyle = boldStyle;
         }
 
         final statusMap = {for (var s in employee.dailyStatuses) s.date: s};
@@ -375,7 +431,10 @@ class AttendanceController extends GetxController {
           final status = statusMap[date];
 
           String checkIn = "-", checkOut = "-", actualHours = "0";
-          String validHours = (date.weekday == DateTime.saturday || date.weekday == DateTime.sunday) ? '5' : '8';
+          String validHours = (date.weekday == DateTime.saturday ||
+                  date.weekday == DateTime.sunday)
+              ? '5'
+              : '8';
 
           if (status != null && status.type == DailyStatusType.present) {
             if (status.arrivalTime != null) {
@@ -402,13 +461,29 @@ class AttendanceController extends GetxController {
           ]);
 
           final newRowIndex = sheet.maxRows - 1;
-          if (date.weekday == DateTime.saturday || date.weekday == DateTime.sunday) {
-            sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: newRowIndex)).cellStyle = weekendStyle;
+          if (date.weekday == DateTime.saturday ||
+              date.weekday == DateTime.sunday) {
+            sheet
+                .cell(CellIndex.indexByColumnRow(
+                    columnIndex: 0, rowIndex: newRowIndex))
+                .cellStyle = weekendStyle;
           }
-          sheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: newRowIndex)).cellStyle = centerStyle;
-          sheet.cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: newRowIndex)).cellStyle = centerStyle;
-          sheet.cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: newRowIndex)).cellStyle = centerStyle;
-          sheet.cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: newRowIndex)).cellStyle = centerStyle;
+          sheet
+              .cell(CellIndex.indexByColumnRow(
+                  columnIndex: 2, rowIndex: newRowIndex))
+              .cellStyle = centerStyle;
+          sheet
+              .cell(CellIndex.indexByColumnRow(
+                  columnIndex: 3, rowIndex: newRowIndex))
+              .cellStyle = centerStyle;
+          sheet
+              .cell(CellIndex.indexByColumnRow(
+                  columnIndex: 4, rowIndex: newRowIndex))
+              .cellStyle = centerStyle;
+          sheet
+              .cell(CellIndex.indexByColumnRow(
+                  columnIndex: 5, rowIndex: newRowIndex))
+              .cellStyle = centerStyle;
         }
 
         sheet.appendRow([
@@ -424,8 +499,14 @@ class AttendanceController extends GetxController {
           CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: totalRowIndex),
           CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: totalRowIndex),
         );
-        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: totalRowIndex)).cellStyle = totalLabelStyle;
-        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: totalRowIndex)).cellStyle = totalValueStyle;
+        sheet
+            .cell(CellIndex.indexByColumnRow(
+                columnIndex: 3, rowIndex: totalRowIndex))
+            .cellStyle = totalLabelStyle;
+        sheet
+            .cell(CellIndex.indexByColumnRow(
+                columnIndex: 5, rowIndex: totalRowIndex))
+            .cellStyle = totalValueStyle;
       }
 
       for (var i = 0; i < 6; i++) {
@@ -435,7 +516,8 @@ class AttendanceController extends GetxController {
       final fileBytes = excel.save();
       if (fileBytes != null) {
         await FileSaver.instance.saveFile(
-          name: 'Attendance_Report_${DateFormat('yyyyMMdd').format(DateTime.now())}',
+          name:
+              'Attendance_Report_${DateFormat('yyyyMMdd').format(DateTime.now())}',
           bytes: Uint8List.fromList(fileBytes),
           ext: 'xlsx',
           mimeType: MimeType.microsoftExcel,

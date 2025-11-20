@@ -35,13 +35,11 @@ class ProductModel {
   // --- YENİ EKLENEN KISIM: Resim URL'sini oluşturan yardımcı ---
   /// Ürünün resim URL'sini dinamik olarak oluşturur.
   String get imageUrl {
-    // ÖNEMLİ: ApiConstants.serverBaseUrl, Node.js sunucunuzun adresini
-    // (örn: 'http://172.16.11.1:3000') içermelidir.
-    if (code.isNotEmpty && code != 'Kod Yok') {
-      // URL'yi oluşturur: http://<sunucu_adresi>/images/<ürün_kodu>.png
-      return '${ApiConstants.serverBaseUrl}/images/$code.png';
+    if (variantName.isNotEmpty) {
+      return '${ApiConstants.serverBaseUrl}/images/${variantName.toUpperCase()}.png';
+    } else if (code.isNotEmpty) {
+      return '${ApiConstants.serverBaseUrl}/images/${code.toUpperCase()}.png';
     }
-    // Eğer ürün kodu yoksa, resim yüklemesini tetiklemeyecek boş bir string döndür.
     return '';
   }
   // --- YENİ EKLENEN KISMIN SONU ---
