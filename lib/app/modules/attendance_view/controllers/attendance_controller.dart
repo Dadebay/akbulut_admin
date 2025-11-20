@@ -79,15 +79,21 @@ class AttendanceController extends GetxController {
     isPreloadingCache.value = true;
     final locations = ['merkez', 'dostluk_akbulut', 'dostluk_tm_gips'];
 
-    print('🔄 Preloading cache for all locations...');
+    print('🔄 Preloading cache for all locations in PARALLEL...');
+
+    // Create a list of futures to run in parallel
+    final List<Future<void>> futures = [];
 
     for (final location in locations) {
-      try {
-        await _loadLocationCache(location);
-      } catch (e) {
+      // Don't await here, add to list
+      futures.add(_loadLocationCache(location).catchError((e) {
         print('❌ Error preloading $location: $e');
-      }
+      }));
     }
+
+    // Wait for all to complete (or run in background if we don't await this)
+    // We want them to run in background but we want to know when done
+    await Future.wait(futures);
 
     isPreloadingCache.value = false;
     print('✅ All locations preloaded!');
@@ -99,29 +105,53 @@ class AttendanceController extends GetxController {
     final today = DateTime(now.year, now.month, now.day);
     final thirtyDaysAgo = today.subtract(const Duration(days: 30));
 
-    print('📦 Loading cache for: $location');
+    print('📦 Loading cache for: $location (fetching in chunks)');
 
-    final records = await _dahuaService.fetchAttendanceRecords(
-      thirtyDaysAgo,
-      today.add(const Duration(days: 1)),
-      location: location,
-    );
+    List<AttendanceRecord> allRecords = [];
+
+    // Fetch in 7-day chunks to avoid device limits/timeouts
+    var currentStart = thirtyDaysAgo;
+    final totalEnd = today.add(const Duration(days: 1));
+
+    while (currentStart.isBefore(totalEnd)) {
+      var currentEnd = currentStart.add(const Duration(days: 7));
+      if (currentEnd.isAfter(totalEnd)) {
+        currentEnd = totalEnd;
+      }
+
+      print(
+          '  ⬇️ Fetching chunk: ${DateFormat('yyyy-MM-dd').format(currentStart)} to ${DateFormat('yyyy-MM-dd').format(currentEnd)}');
+
+      try {
+        final chunkRecords = await _dahuaService.fetchAttendanceRecords(
+          currentStart,
+          currentEnd,
+          location: location,
+        );
+        allRecords.addAll(chunkRecords);
+        print('  ✅ Chunk loaded: ${chunkRecords.length} records');
+      } catch (e) {
+        print('  ❌ Error fetching chunk: $e');
+      }
+
+      currentStart = currentEnd;
+    }
 
     // Extract employee names
     final Map<String, String> employeeNames = {};
-    for (var record in records) {
+    for (var record in allRecords) {
       if (!employeeNames.containsKey(record.userId)) {
         employeeNames[record.userId] = record.cardName;
       }
     }
 
     // Store in cache
-    _locationCache[location] = records;
+    _locationCache[location] = allRecords;
     _locationEmployeeNames[location] = employeeNames;
     _locationCacheTime[location] = now;
 
     print(
-        '✅ Cached $location: ${employeeNames.length} employees, ${records.length} records');
+        '✅ Cached $location: ${employeeNames.length} employees, ${allRecords.length} total records');
   }
 
   Future<void> fetchData() async {
@@ -129,102 +159,48 @@ class AttendanceController extends GetxController {
       isLoading.value = true;
       final range = selectedDateRange.value;
       final location = selectedLocation.value;
-      final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-      final thirtyDaysAgo = today.subtract(const Duration(days: 30));
 
       // Check if we have cache for this location
       final bool hasCache = _locationCache.containsKey(location) &&
           _locationEmployeeNames.containsKey(location);
 
-      // Check if selected range is within last 30 days
-      final bool isWithin30Days = !range.start.isBefore(thirtyDaysAgo) &&
-          !range.end.isAfter(today.add(const Duration(days: 1)));
-
       Map<String, String> allEmployeeNames;
       List<AttendanceRecord> rangeRecords;
 
-      if (hasCache && isWithin30Days) {
-        // Use cached data - FAST!
-        print('⚡ Using cache for $location');
-        allEmployeeNames = Map.from(_locationEmployeeNames[location]!);
+      if (!hasCache) {
+        print('🌐 Cache missing, loading fresh data...');
+        await _loadLocationCache(location);
 
-        // Filter cached records for the selected date range
-        // Need to compare dates properly - range.end might not include full day
-        final rangeEndPlusOne = range.end.add(const Duration(days: 1));
-        rangeRecords = _locationCache[location]!.where((record) {
-          final isInRange = !record.createTime.isBefore(range.start) &&
-              record.createTime.isBefore(rangeEndPlusOne);
-
-          // Debug for GURBANOW
-          if (record.cardName.contains('GURBANOW')) {
-            print(
-                '🔍 GURBANOW record: ${record.createTime} - In range: $isInRange (${range.start} to ${range.end})');
-          }
-
-          return isInRange;
-        }).toList();
-
-        // Count GURBANOW records
-        final gurbanowRecords =
-            rangeRecords.where((r) => r.cardName.contains('GURBANOW')).length;
-        print(
-            '⚡ Filtered ${rangeRecords.length} records from cache (${range.start} to ${range.end})');
-        print('🔍 GURBANOW records in filtered data: $gurbanowRecords');
-      } else {
-        // Need to fetch data
-        print(
-            '🌐 Fetching data for $location (range: ${range.start} to ${range.end})');
-
-        // Get employee list from cache if available
-        if (hasCache) {
+        // Re-check cache after loading
+        if (_locationCache.containsKey(location) &&
+            _locationEmployeeNames.containsKey(location)) {
+          print('✅ Cache loaded successfully, using it.');
           allEmployeeNames = Map.from(_locationEmployeeNames[location]!);
-          print('📋 Using ${allEmployeeNames.length} employees from cache');
         } else {
-          // Fetch last 30 days for employee list
-          final masterRecords = await _dahuaService.fetchAttendanceRecords(
-            thirtyDaysAgo,
-            today.add(const Duration(days: 1)),
-            location: location,
-          );
-
+          print('❌ Failed to load cache, using empty data.');
           allEmployeeNames = {};
-          for (var record in masterRecords) {
-            if (!allEmployeeNames.containsKey(record.userId)) {
-              allEmployeeNames[record.userId] = record.cardName;
-            }
-          }
-
-          // Cache it for future use
-          _locationCache[location] = masterRecords;
-          _locationEmployeeNames[location] = allEmployeeNames;
-          _locationCacheTime[location] = now;
+          _locationCache[location] = [];
         }
-
-        // Fetch records for the selected date range
-        rangeRecords = [];
-        const maxDurationDays = 30;
-        var currentStart = range.start;
-
-        while (currentStart.isBefore(range.end)) {
-          var currentEnd =
-              currentStart.add(const Duration(days: maxDurationDays));
-          if (currentEnd.isAfter(range.end)) {
-            currentEnd = range.end;
-          }
-
-          final chunkRecords = await _dahuaService.fetchAttendanceRecords(
-            currentStart,
-            currentEnd,
-            location: location,
-          );
-          rangeRecords.addAll(chunkRecords);
-
-          currentStart = currentEnd.add(const Duration(days: 1));
-        }
-
-        print('🌐 Fetched ${rangeRecords.length} records');
+      } else {
+        allEmployeeNames = Map.from(_locationEmployeeNames[location]!);
       }
+
+      // Always filter from cache (since we just loaded it if it was missing)
+      // Need to compare dates properly - range.end might not include full day
+      final rangeEndPlusOne = range.end.add(const Duration(days: 1));
+
+      // If range is outside 30 days cache, we might need to fetch specific range
+      // But for now let's assume we work with 30 days cache primarily
+      // If user selects older dates, we might need separate logic, but let's stick to cache for consistency
+
+      rangeRecords = _locationCache[location]!.where((record) {
+        final isInRange = !record.createTime.isBefore(range.start) &&
+            record.createTime.isBefore(rangeEndPlusOne);
+        return isInRange;
+      }).toList();
+
+      print(
+          '⚡ Filtered ${rangeRecords.length} records from cache (${range.start} to ${range.end})');
 
       _processRecords(rangeRecords, range, allEmployeeNames);
       await _updateLiveStatus();

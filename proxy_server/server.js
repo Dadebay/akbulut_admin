@@ -165,44 +165,52 @@ async function fetchRecordsFromDevice(device, startTime, endTime) {
         }
 
         // If we have more records to fetch, use action=next
-        while (fetchedRecords < totalRecords) {
+        // Don't rely solely on totalRecords (found=), keep fetching until no new records or empty response
+        let keepFetching = true;
+
+        while (keepFetching) {
+            // If we reached totalRecords (and it's > 0), we might stop, but let's be safe and try one more
+            // Some devices report wrong found count
+
             const nextUrl = `${DAHUA_BASE_URL}${DAHUA_API_PATH}?action=next&name=AccessControlCardRec&count=1024`;
             const nextUriPath = `${DAHUA_API_PATH}?action=next&name=AccessControlCardRec&count=1024`;
 
-            console.log(`[${DAHUA_BASE_URL}] Devam kayıtları alınıyor... (${fetchedRecords}/${totalRecords})`);
+            console.log(`[${DAHUA_BASE_URL}] Devam kayıtları alınıyor... (${fetchedRecords}/${totalRecords || '?'})`);
 
             const nextData = await makeAuthenticatedRequest(DAHUA_BASE_URL, nextUrl, nextUriPath, DAHUA_USERNAME, DAHUA_PASSWORD);
 
             if (!nextData) {
-                console.log(`[${DAHUA_BASE_URL}] Devam kayıtları alınamadı, mevcut kayıtlarla devam ediliyor.`);
+                console.log(`[${DAHUA_BASE_URL}] Devam kayıtları için boş yanıt, durduruluyor.`);
+                keepFetching = false;
                 break;
             }
 
-            // Parse records from next response and append to allData
+            // Parse records from next response
             const nextRecordMatches = nextData.match(/records\[\d+\]/g);
+            let newRecordsCount = 0;
+
             if (nextRecordMatches) {
                 const uniqueNextIndices = new Set(nextRecordMatches.map(m => m.match(/\d+/)[0]));
-                const newRecordsCount = uniqueNextIndices.size;
+                newRecordsCount = uniqueNextIndices.size;
+            }
 
-                if (newRecordsCount === 0) {
-                    console.log(`[${DAHUA_BASE_URL}] Daha fazla kayıt yok.`);
-                    break;
-                }
-
-                // Append new records to allData (skip the "found=" line)
-                const nextLines = nextData.split('\n').filter(line => !line.startsWith('found='));
-                allData += '\n' + nextLines.join('\n');
-
-                fetchedRecords += newRecordsCount;
-                console.log(`[${DAHUA_BASE_URL}] Yeni kayıt eklendi: ${newRecordsCount}, Toplam: ${fetchedRecords}/${totalRecords}`);
-            } else {
-                console.log(`[${DAHUA_BASE_URL}] Devam kaydı bulunamadı.`);
+            if (newRecordsCount === 0) {
+                console.log(`[${DAHUA_BASE_URL}] Yeni kayıt gelmedi (0), durduruluyor.`);
+                keepFetching = false;
                 break;
             }
 
+            // Append new records to allData (skip the "found=" line)
+            const nextLines = nextData.split('\n').filter(line => !line.startsWith('found='));
+            allData += '\n' + nextLines.join('\n');
+
+            fetchedRecords += newRecordsCount;
+            console.log(`[${DAHUA_BASE_URL}] Yeni kayıt eklendi: ${newRecordsCount}, Toplam: ${fetchedRecords}`);
+
             // Safety check to prevent infinite loops
-            if (fetchedRecords >= 10000) {
-                console.log(`[${DAHUA_BASE_URL}] Güvenlik limiti (10000 kayıt) aşıldı, durduruluyor.`);
+            if (fetchedRecords >= 100000) {
+                console.log(`[${DAHUA_BASE_URL}] Güvenlik limiti (100000 kayıt) aşıldı, durduruluyor.`);
+                keepFetching = false;
                 break;
             }
         }
