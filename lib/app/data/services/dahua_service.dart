@@ -23,7 +23,7 @@ class DahuaService {
     });
     print("Sunucuya istek gönderiliyor: $url");
     try {
-      final response = await http.get(url).timeout(const Duration(seconds: 15));
+      final response = await http.get(url).timeout(const Duration(seconds: 60));
       print("Sunucudan gelen yanıt durumu: ${response.statusCode}");
       if (response.statusCode == 200) {
         return _parseResponse(response.body);

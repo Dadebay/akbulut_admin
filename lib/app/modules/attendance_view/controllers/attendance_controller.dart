@@ -42,6 +42,12 @@ class AttendanceController extends GetxController {
   // Location selection for different offices
   var selectedLocation = 'merkez'.obs;
 
+  // Cache system - separate cache for each location
+  final Map<String, List<AttendanceRecord>> _locationCache = {};
+  final Map<String, Map<String, String>> _locationEmployeeNames = {};
+  final Map<String, DateTime> _locationCacheTime = {};
+  var isPreloadingCache = false.obs;
+
   bool get shouldShowLiveStatus {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -66,57 +72,165 @@ class AttendanceController extends GetxController {
     fetchData();
   }
 
+  // Preload cache for all locations in background
+  Future<void> preloadAllLocations() async {
+    if (isPreloadingCache.value) return;
+
+    isPreloadingCache.value = true;
+    final locations = ['merkez', 'dostluk_akbulut', 'dostluk_tm_gips'];
+
+    print('🔄 Preloading cache for all locations...');
+
+    for (final location in locations) {
+      try {
+        await _loadLocationCache(location);
+      } catch (e) {
+        print('❌ Error preloading $location: $e');
+      }
+    }
+
+    isPreloadingCache.value = false;
+    print('✅ All locations preloaded!');
+  }
+
+  // Load cache for a specific location
+  Future<void> _loadLocationCache(String location) async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final thirtyDaysAgo = today.subtract(const Duration(days: 30));
+
+    print('📦 Loading cache for: $location');
+
+    final records = await _dahuaService.fetchAttendanceRecords(
+      thirtyDaysAgo,
+      today.add(const Duration(days: 1)),
+      location: location,
+    );
+
+    // Extract employee names
+    final Map<String, String> employeeNames = {};
+    for (var record in records) {
+      if (!employeeNames.containsKey(record.userId)) {
+        employeeNames[record.userId] = record.cardName;
+      }
+    }
+
+    // Store in cache
+    _locationCache[location] = records;
+    _locationEmployeeNames[location] = employeeNames;
+    _locationCacheTime[location] = now;
+
+    print(
+        '✅ Cached $location: ${employeeNames.length} employees, ${records.length} records');
+  }
+
   Future<void> fetchData() async {
     try {
       isLoading.value = true;
       final range = selectedDateRange.value;
-
-      // First, get last 30 days to build complete employee list
+      final location = selectedLocation.value;
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
       final thirtyDaysAgo = today.subtract(const Duration(days: 30));
 
-      final masterRecords = await _dahuaService.fetchAttendanceRecords(
-        thirtyDaysAgo,
-        today.add(const Duration(days: 1)),
-        location: selectedLocation.value,
-      );
+      // Check if we have cache for this location
+      final bool hasCache = _locationCache.containsKey(location) &&
+          _locationEmployeeNames.containsKey(location);
 
-      // Extract all unique employees from last 30 days
-      final Map<String, String> allEmployeeNames = {};
-      for (var record in masterRecords) {
-        if (!allEmployeeNames.containsKey(record.userId)) {
-          allEmployeeNames[record.userId] = record.cardName;
+      // Check if selected range is within last 30 days
+      final bool isWithin30Days = !range.start.isBefore(thirtyDaysAgo) &&
+          !range.end.isAfter(today.add(const Duration(days: 1)));
+
+      Map<String, String> allEmployeeNames;
+      List<AttendanceRecord> rangeRecords;
+
+      if (hasCache && isWithin30Days) {
+        // Use cached data - FAST!
+        print('⚡ Using cache for $location');
+        allEmployeeNames = Map.from(_locationEmployeeNames[location]!);
+
+        // Filter cached records for the selected date range
+        // Need to compare dates properly - range.end might not include full day
+        final rangeEndPlusOne = range.end.add(const Duration(days: 1));
+        rangeRecords = _locationCache[location]!.where((record) {
+          final isInRange = !record.createTime.isBefore(range.start) &&
+              record.createTime.isBefore(rangeEndPlusOne);
+
+          // Debug for GURBANOW
+          if (record.cardName.contains('GURBANOW')) {
+            print(
+                '🔍 GURBANOW record: ${record.createTime} - In range: $isInRange (${range.start} to ${range.end})');
+          }
+
+          return isInRange;
+        }).toList();
+
+        // Count GURBANOW records
+        final gurbanowRecords =
+            rangeRecords.where((r) => r.cardName.contains('GURBANOW')).length;
+        print(
+            '⚡ Filtered ${rangeRecords.length} records from cache (${range.start} to ${range.end})');
+        print('🔍 GURBANOW records in filtered data: $gurbanowRecords');
+      } else {
+        // Need to fetch data
+        print(
+            '🌐 Fetching data for $location (range: ${range.start} to ${range.end})');
+
+        // Get employee list from cache if available
+        if (hasCache) {
+          allEmployeeNames = Map.from(_locationEmployeeNames[location]!);
+          print('📋 Using ${allEmployeeNames.length} employees from cache');
+        } else {
+          // Fetch last 30 days for employee list
+          final masterRecords = await _dahuaService.fetchAttendanceRecords(
+            thirtyDaysAgo,
+            today.add(const Duration(days: 1)),
+            location: location,
+          );
+
+          allEmployeeNames = {};
+          for (var record in masterRecords) {
+            if (!allEmployeeNames.containsKey(record.userId)) {
+              allEmployeeNames[record.userId] = record.cardName;
+            }
+          }
+
+          // Cache it for future use
+          _locationCache[location] = masterRecords;
+          _locationEmployeeNames[location] = allEmployeeNames;
+          _locationCacheTime[location] = now;
         }
+
+        // Fetch records for the selected date range
+        rangeRecords = [];
+        const maxDurationDays = 30;
+        var currentStart = range.start;
+
+        while (currentStart.isBefore(range.end)) {
+          var currentEnd =
+              currentStart.add(const Duration(days: maxDurationDays));
+          if (currentEnd.isAfter(range.end)) {
+            currentEnd = range.end;
+          }
+
+          final chunkRecords = await _dahuaService.fetchAttendanceRecords(
+            currentStart,
+            currentEnd,
+            location: location,
+          );
+          rangeRecords.addAll(chunkRecords);
+
+          currentStart = currentEnd.add(const Duration(days: 1));
+        }
+
+        print('🌐 Fetched ${rangeRecords.length} records');
       }
 
-      // Now fetch records for the selected date range
-      final List<AttendanceRecord> allRecords = [];
-
-      const maxDurationDays = 30;
-      var currentStart = range.start;
-
-      while (currentStart.isBefore(range.end)) {
-        var currentEnd =
-            currentStart.add(const Duration(days: maxDurationDays));
-        if (currentEnd.isAfter(range.end)) {
-          currentEnd = range.end;
-        }
-
-        final chunkRecords = await _dahuaService.fetchAttendanceRecords(
-          currentStart,
-          currentEnd,
-          location: selectedLocation.value,
-        );
-        allRecords.addAll(chunkRecords);
-
-        currentStart = currentEnd.add(const Duration(days: 1));
-      }
-
-      _processRecords(allRecords, range, allEmployeeNames);
-      await _updateLiveStatus(); // Update live status separately
+      _processRecords(rangeRecords, range, allEmployeeNames);
+      await _updateLiveStatus();
       filterEmployees();
     } catch (e) {
+      print('❌ Error in fetchData: $e');
       Get.snackbar('error_title'.tr, 'error_message'.tr);
     } finally {
       isLoading.value = false;
@@ -182,6 +296,12 @@ class AttendanceController extends GetxController {
     allEmployeeNames.forEach((userId, employeeName) {
       final userSpecificRecords = userRecords[userId] ?? [];
 
+      // Debug for GURBANOW
+      if (employeeName.contains('GURBANOW')) {
+        print(
+            '🔍 Processing GURBANOW: ${userSpecificRecords.length} total records');
+      }
+
       final dailyStatuses = <DailyStatus>[];
       final recordsByDay = userSpecificRecords.isNotEmpty
           ? groupBy(
@@ -189,6 +309,14 @@ class AttendanceController extends GetxController {
               (AttendanceRecord r) => DateTime(
                   r.createTime.year, r.createTime.month, r.createTime.day))
           : <DateTime, List<AttendanceRecord>>{};
+
+      // Debug for GURBANOW
+      if (employeeName.contains('GURBANOW')) {
+        print('🔍 GURBANOW records by day:');
+        recordsByDay.forEach((date, recs) {
+          print('  📅 $date: ${recs.length} records');
+        });
+      }
 
       for (var i = 0; i <= range.duration.inDays; i++) {
         final date = range.start.add(Duration(days: i));
@@ -251,12 +379,23 @@ class AttendanceController extends GetxController {
             departureTime: departure,
             workDuration: duration,
           );
+
+          // Debug for GURBANOW
+          if (employeeName.contains('GURBANOW')) {
+            print(
+                '  ✅ $date: PRESENT (arrival: $arrival, departure: $departure)');
+          }
         } else {
           status = DailyStatus(
             date: date,
             type: isWeekend ? DailyStatusType.weekend : DailyStatusType.absent,
             isWeekend: isWeekend,
           );
+
+          // Debug for GURBANOW
+          if (employeeName.contains('GURBANOW')) {
+            print('  ❌ $date: ${isWeekend ? "WEEKEND" : "ABSENT"}');
+          }
         }
         dailyStatuses.add(status);
       }
@@ -436,10 +575,8 @@ class AttendanceController extends GetxController {
 
         final List<CellValue> header = [
           TextCellValue('date'.tr),
-          TextCellValue('period'.tr),
           TextCellValue('arrival'.tr),
           TextCellValue('departure'.tr),
-          TextCellValue('norm_hours'.tr),
           TextCellValue('actual_hours'.tr),
         ];
         sheet.appendRow(header);
@@ -459,10 +596,6 @@ class AttendanceController extends GetxController {
           final status = statusMap[date];
 
           String checkIn = "-", checkOut = "-", actualHours = "0";
-          String validHours = (date.weekday == DateTime.saturday ||
-                  date.weekday == DateTime.sunday)
-              ? '5'
-              : '8';
 
           if (status != null && status.type == DailyStatusType.present) {
             if (status.arrivalTime != null) {
@@ -480,11 +613,9 @@ class AttendanceController extends GetxController {
           totalActualHours += double.tryParse(actualHours) ?? 0.0;
 
           sheet.appendRow([
-            TextCellValue(DateFormat('dd/MM/yyyy').format(date)),
-            TextCellValue('9.00'),
+            TextCellValue(DateFormat('dd.MM.yyyy').format(date)),
             TextCellValue(checkIn),
             TextCellValue(checkOut),
-            TextCellValue(validHours),
             TextCellValue(actualHours),
           ]);
 
@@ -517,27 +648,25 @@ class AttendanceController extends GetxController {
         sheet.appendRow([
           TextCellValue(''),
           TextCellValue(''),
-          TextCellValue(''),
-          TextCellValue(''),
           TextCellValue('total_worked_hours'.tr),
           TextCellValue(totalActualHours.toStringAsFixed(2)),
         ]);
         final totalRowIndex = sheet.maxRows - 1;
         sheet.merge(
-          CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: totalRowIndex),
-          CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: totalRowIndex),
+          CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: totalRowIndex),
+          CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: totalRowIndex),
         );
         sheet
             .cell(CellIndex.indexByColumnRow(
-                columnIndex: 3, rowIndex: totalRowIndex))
+                columnIndex: 2, rowIndex: totalRowIndex))
             .cellStyle = totalLabelStyle;
         sheet
             .cell(CellIndex.indexByColumnRow(
-                columnIndex: 5, rowIndex: totalRowIndex))
+                columnIndex: 3, rowIndex: totalRowIndex))
             .cellStyle = totalValueStyle;
       }
 
-      for (var i = 0; i < 6; i++) {
+      for (var i = 0; i < 4; i++) {
         sheet.setColumnAutoFit(i);
       }
 
@@ -545,7 +674,7 @@ class AttendanceController extends GetxController {
       if (fileBytes != null) {
         await FileSaver.instance.saveFile(
           name:
-              'Attendance_Report_${DateFormat('yyyyMMdd').format(DateTime.now())}',
+              'Отчет_посещаемости_${DateFormat('yyyyMMdd').format(DateTime.now())}',
           bytes: Uint8List.fromList(fileBytes),
           ext: 'xlsx',
           mimeType: MimeType.microsoftExcel,

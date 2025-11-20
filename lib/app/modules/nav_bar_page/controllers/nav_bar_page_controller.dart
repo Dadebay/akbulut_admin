@@ -1,4 +1,5 @@
 import 'package:akbulut_admin/app/data/services/dahua_service.dart';
+import 'package:akbulut_admin/app/modules/attendance_view/controllers/attendance_controller.dart';
 import 'package:akbulut_admin/app/modules/attendance_view/views/attendance_view.dart';
 import 'package:akbulut_admin/app/modules/expences/views/expences_view.dart';
 import 'package:akbulut_admin/app/modules/home/views/home_view.dart';
@@ -63,7 +64,13 @@ class NavBarPageController extends GetxController {
     IconlyLight.wallet,
   ];
 
-  final List<String> _satysTitles = ['home', 'products', 'sales', 'purchases', 'expences'];
+  final List<String> _satysTitles = [
+    'home',
+    'products',
+    'sales',
+    'purchases',
+    'expences'
+  ];
 
   @override
   void onInit() {
@@ -95,6 +102,18 @@ class NavBarPageController extends GetxController {
         pages = _adminPages;
         icons = _adminIcons;
         titles = _adminTitles;
+    }
+  }
+
+  void preloadAttendanceCache() {
+    // Find AttendanceController and trigger preload
+    try {
+      final attendanceController = Get.find<AttendanceController>();
+      Future.delayed(const Duration(milliseconds: 100), () {
+        attendanceController.preloadAllLocations();
+      });
+    } catch (e) {
+      print('AttendanceController not found yet, will preload later');
     }
   }
 

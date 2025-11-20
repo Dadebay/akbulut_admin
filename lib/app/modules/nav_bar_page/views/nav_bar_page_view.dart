@@ -3,11 +3,22 @@ import 'package:akbulut_admin/app/product/init/packages.dart';
 import 'package:akbulut_admin/app/product/widgets/drawer_button.dart';
 import 'package:get/get.dart';
 
-class NavBarPageView extends GetView<NavBarPageController> {
+class NavBarPageView extends StatefulWidget {
+  const NavBarPageView({super.key});
+
   @override
+  State<NavBarPageView> createState() => _NavBarPageViewState();
+}
+
+class _NavBarPageViewState extends State<NavBarPageView> {
   final NavBarPageController controller = Get.put(NavBarPageController());
 
-  NavBarPageView({super.key});
+  @override
+  void initState() {
+    super.initState();
+    // Preload attendance cache in background
+    controller.preloadAttendanceCache();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -17,7 +28,9 @@ class NavBarPageView extends GetView<NavBarPageController> {
           AnimatedContainer(
             duration: const Duration(milliseconds: 300),
             width: MediaQuery.of(context).size.width < 600 ? 70 : 220,
-            child: _DrawerView(isCollapsed: MediaQuery.of(context).size.width < 600 ? true : false),
+            child: _DrawerView(
+                isCollapsed:
+                    MediaQuery.of(context).size.width < 600 ? true : false),
             decoration: BoxDecoration(
               color: Colors.white70,
               border: Border(
@@ -69,7 +82,9 @@ class _DrawerView extends GetView<NavBarPageController> {
                       showIconOnly: isCollapsed,
                       icon: icon,
                       title: title,
-                      isCollapsed: MediaQuery.of(context).size.width < 600 ? true : false,
+                      isCollapsed: MediaQuery.of(context).size.width < 600
+                          ? true
+                          : false,
                     ));
               }),
             ),
@@ -94,7 +109,10 @@ class _Header extends StatelessWidget {
         textAlign: TextAlign.center,
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: ColorConstants.kPrimaryColor, fontWeight: FontWeight.bold, fontSize: 28),
+        style: TextStyle(
+            color: ColorConstants.kPrimaryColor,
+            fontWeight: FontWeight.bold,
+            fontSize: 28),
       ),
     );
   }
