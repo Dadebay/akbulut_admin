@@ -70,6 +70,27 @@ class AttendanceController extends GetxController {
     try {
       isLoading.value = true;
       final range = selectedDateRange.value;
+
+      // First, get last 30 days to build complete employee list
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final thirtyDaysAgo = today.subtract(const Duration(days: 30));
+
+      final masterRecords = await _dahuaService.fetchAttendanceRecords(
+        thirtyDaysAgo,
+        today.add(const Duration(days: 1)),
+        location: selectedLocation.value,
+      );
+
+      // Extract all unique employees from last 30 days
+      final Map<String, String> allEmployeeNames = {};
+      for (var record in masterRecords) {
+        if (!allEmployeeNames.containsKey(record.userId)) {
+          allEmployeeNames[record.userId] = record.cardName;
+        }
+      }
+
+      // Now fetch records for the selected date range
       final List<AttendanceRecord> allRecords = [];
 
       const maxDurationDays = 30;
@@ -92,7 +113,7 @@ class AttendanceController extends GetxController {
         currentStart = currentEnd.add(const Duration(days: 1));
       }
 
-      _processRecords(allRecords, range);
+      _processRecords(allRecords, range, allEmployeeNames);
       await _updateLiveStatus(); // Update live status separately
       filterEmployees();
     } catch (e) {
@@ -148,126 +169,133 @@ class AttendanceController extends GetxController {
     }
   }
 
-  void _processRecords(List<AttendanceRecord> records, DateTimeRange range) {
+  void _processRecords(
+    List<AttendanceRecord> records,
+    DateTimeRange range,
+    Map<String, String> allEmployeeNames,
+  ) {
     final userRecords = groupBy(records, (AttendanceRecord r) => r.userId);
 
     allEmployees.clear();
-    userRecords.forEach((userId, userSpecificRecords) {
-      if (userSpecificRecords.isNotEmpty) {
-        final dailyStatuses = <DailyStatus>[];
-        final recordsByDay = groupBy(
-            userSpecificRecords,
-            (AttendanceRecord r) => DateTime(
-                r.createTime.year, r.createTime.month, r.createTime.day));
 
-        for (var i = 0; i <= range.duration.inDays; i++) {
-          final date = range.start.add(Duration(days: i));
-          final dayRecords = recordsByDay[date];
-          final bool isWeekend = date.weekday == DateTime.saturday ||
-              date.weekday == DateTime.sunday;
+    // Process all employees from the master list
+    allEmployeeNames.forEach((userId, employeeName) {
+      final userSpecificRecords = userRecords[userId] ?? [];
 
-          DailyStatus status;
-          if (dayRecords != null && dayRecords.isNotEmpty) {
-            dayRecords.sort((a, b) => a.createTime.compareTo(b.createTime));
+      final dailyStatuses = <DailyStatus>[];
+      final recordsByDay = userSpecificRecords.isNotEmpty
+          ? groupBy(
+              userSpecificRecords,
+              (AttendanceRecord r) => DateTime(
+                  r.createTime.year, r.createTime.month, r.createTime.day))
+          : <DateTime, List<AttendanceRecord>>{};
 
-            DateTime? arrival;
-            DateTime? departure;
+      for (var i = 0; i <= range.duration.inDays; i++) {
+        final date = range.start.add(Duration(days: i));
+        final dayRecords = recordsByDay[date];
+        final bool isWeekend = date.weekday == DateTime.saturday ||
+            date.weekday == DateTime.sunday;
 
-            final timeSpan = dayRecords.last.createTime
-                .difference(dayRecords.first.createTime);
+        DailyStatus status;
+        if (dayRecords != null && dayRecords.isNotEmpty) {
+          dayRecords.sort((a, b) => a.createTime.compareTo(b.createTime));
 
-            if (timeSpan.inMinutes < 40) {
-              final singleEventTime = dayRecords.first.createTime;
-              if (singleEventTime.hour < 14) {
-                arrival = singleEventTime;
-                departure = null;
-              } else {
-                departure = singleEventTime;
-                arrival = DateTime(singleEventTime.year, singleEventTime.month,
-                    singleEventTime.day, 9, 0);
-              }
+          DateTime? arrival;
+          DateTime? departure;
+
+          final timeSpan = dayRecords.last.createTime
+              .difference(dayRecords.first.createTime);
+
+          if (timeSpan.inMinutes < 40) {
+            final singleEventTime = dayRecords.first.createTime;
+            if (singleEventTime.hour < 14) {
+              arrival = singleEventTime;
+              departure = null;
             } else {
-              arrival = dayRecords.first.createTime;
-              departure = dayRecords.last.createTime;
+              departure = singleEventTime;
+              arrival = DateTime(singleEventTime.year, singleEventTime.month,
+                  singleEventTime.day, 9, 0);
             }
-
-            Duration? duration;
-            final now = DateTime.now();
-            final today = DateTime(now.year, now.month, now.day);
-
-            if (departure != null) {
-              duration = departure.difference(arrival);
-            } else {
-              if (date == today) {
-                duration = now.difference(arrival);
-              } else {
-                DateTime defaultDeparture;
-                if (date.weekday >= 1 && date.weekday <= 5) {
-                  defaultDeparture =
-                      DateTime(date.year, date.month, date.day, 18, 0);
-                } else {
-                  defaultDeparture =
-                      DateTime(date.year, date.month, date.day, 13, 0);
-                }
-                duration = defaultDeparture.difference(arrival);
-              }
-            }
-
-            status = DailyStatus(
-              date: date,
-              type: DailyStatusType.present,
-              isWeekend: isWeekend,
-              arrivalTime: arrival,
-              departureTime: departure,
-              workDuration: duration,
-            );
           } else {
-            status = DailyStatus(
-              date: date,
-              type:
-                  isWeekend ? DailyStatusType.weekend : DailyStatusType.absent,
-              isWeekend: isWeekend,
-            );
+            arrival = dayRecords.first.createTime;
+            departure = dayRecords.last.createTime;
           }
-          dailyStatuses.add(status);
-        }
-        dailyStatuses.sort((a, b) => a.date.compareTo(b.date));
 
-        final totalWorkDuration = dailyStatuses.fold<Duration>(
-          Duration.zero,
-          (prev, status) => prev + (status.workDuration ?? Duration.zero),
-        );
+          Duration? duration;
+          final now = DateTime.now();
+          final today = DateTime(now.year, now.month, now.day);
 
-        Duration totalExpectedWorkDuration = Duration.zero;
-        for (var i = 0; i <= range.duration.inDays; i++) {
-          final date = range.start.add(Duration(days: i));
-          final status = dailyStatuses.firstWhereOrNull((s) => s.date == date);
-
-          if (status != null && status.type != DailyStatusType.weekend) {
-            if (date.weekday >= 1 && date.weekday <= 5) {
-              totalExpectedWorkDuration += Duration(hours: 8);
+          if (departure != null) {
+            duration = departure.difference(arrival);
+          } else {
+            if (date == today) {
+              duration = now.difference(arrival);
             } else {
-              totalExpectedWorkDuration += Duration(hours: 5);
+              DateTime defaultDeparture;
+              if (date.weekday >= 1 && date.weekday <= 5) {
+                defaultDeparture =
+                    DateTime(date.year, date.month, date.day, 18, 0);
+              } else {
+                defaultDeparture =
+                    DateTime(date.year, date.month, date.day, 13, 0);
+              }
+              duration = defaultDeparture.difference(arrival);
             }
           }
+
+          status = DailyStatus(
+            date: date,
+            type: DailyStatusType.present,
+            isWeekend: isWeekend,
+            arrivalTime: arrival,
+            departureTime: departure,
+            workDuration: duration,
+          );
+        } else {
+          status = DailyStatus(
+            date: date,
+            type: isWeekend ? DailyStatusType.weekend : DailyStatusType.absent,
+            isWeekend: isWeekend,
+          );
         }
-
-        final successRate = (totalExpectedWorkDuration.inMinutes > 0)
-            ? (totalWorkDuration.inMinutes /
-                    totalExpectedWorkDuration.inMinutes) *
-                100
-            : 0.0;
-
-        final employee = Employee(
-          userId: userId,
-          name: (userSpecificRecords.first.cardName ?? 'Unknown').toTitleCase(),
-          dailyStatuses: dailyStatuses,
-          totalWorkDuration: totalWorkDuration,
-          successRate: successRate,
-        );
-
-        allEmployees.add(employee);
+        dailyStatuses.add(status);
       }
+      dailyStatuses.sort((a, b) => a.date.compareTo(b.date));
+
+      final totalWorkDuration = dailyStatuses.fold<Duration>(
+        Duration.zero,
+        (prev, status) => prev + (status.workDuration ?? Duration.zero),
+      );
+
+      Duration totalExpectedWorkDuration = Duration.zero;
+      for (var i = 0; i <= range.duration.inDays; i++) {
+        final date = range.start.add(Duration(days: i));
+        final status = dailyStatuses.firstWhereOrNull((s) => s.date == date);
+
+        if (status != null && status.type != DailyStatusType.weekend) {
+          if (date.weekday >= 1 && date.weekday <= 5) {
+            totalExpectedWorkDuration += Duration(hours: 8);
+          } else {
+            totalExpectedWorkDuration += Duration(hours: 5);
+          }
+        }
+      }
+
+      final successRate = (totalExpectedWorkDuration.inMinutes > 0)
+          ? (totalWorkDuration.inMinutes /
+                  totalExpectedWorkDuration.inMinutes) *
+              100
+          : 0.0;
+
+      final employee = Employee(
+        userId: userId,
+        name: employeeName.toTitleCase(),
+        dailyStatuses: dailyStatuses,
+        totalWorkDuration: totalWorkDuration,
+        successRate: successRate,
+      );
+
+      allEmployees.add(employee);
     });
   }
 
