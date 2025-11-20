@@ -129,13 +129,97 @@ async function generateDigestAuthHeader(method, uri, wwwAuthenticateHeader, user
 
 async function fetchRecordsFromDevice(device, startTime, endTime) {
     const { DAHUA_BASE_URL, DAHUA_USERNAME, DAHUA_PASSWORD } = device;
-    const dahuaApiUrl = `${DAHUA_BASE_URL}${DAHUA_API_PATH}?action=find&name=AccessControlCardRec&StartTime=${startTime}&EndTime=${endTime}`;
-    const dahuaUriPath = `${DAHUA_API_PATH}?action=find&name=AccessControlCardRec&StartTime=${startTime}&EndTime=${endTime}`;
+    let allData = '';
+    let totalRecords = 0;
+    let fetchedRecords = 0;
 
-    console.log(`İstek gönderiliyor: ${dahuaApiUrl}`);
+    // First request with action=find
+    const findUrl = `${DAHUA_BASE_URL}${DAHUA_API_PATH}?action=find&name=AccessControlCardRec&StartTime=${startTime}&EndTime=${endTime}`;
+    const findUriPath = `${DAHUA_API_PATH}?action=find&name=AccessControlCardRec&StartTime=${startTime}&EndTime=${endTime}`;
+
+    console.log(`[${DAHUA_BASE_URL}] İlk istek gönderiliyor: ${findUrl}`);
 
     try {
-        const initialResponse = await axios.get(dahuaApiUrl, { validateStatus: (status) => status === 200 || status === 401 });
+        // Get first batch of records
+        const firstData = await makeAuthenticatedRequest(DAHUA_BASE_URL, findUrl, findUriPath, DAHUA_USERNAME, DAHUA_PASSWORD);
+
+        if (!firstData) {
+            return '';
+        }
+
+        allData = firstData;
+
+        // Parse the found count from response
+        const foundMatch = firstData.match(/found=(\d+)/);
+        if (foundMatch) {
+            totalRecords = parseInt(foundMatch[1], 10);
+            console.log(`[${DAHUA_BASE_URL}] Toplam kayıt sayısı: ${totalRecords}`);
+        }
+
+        // Count how many records we got in first response
+        const recordMatches = firstData.match(/records\[\d+\]/g);
+        if (recordMatches) {
+            const uniqueIndices = new Set(recordMatches.map(m => m.match(/\d+/)[0]));
+            fetchedRecords = uniqueIndices.size;
+            console.log(`[${DAHUA_BASE_URL}] İlk istekte alınan kayıt: ${fetchedRecords}`);
+        }
+
+        // If we have more records to fetch, use action=next
+        while (fetchedRecords < totalRecords) {
+            const nextUrl = `${DAHUA_BASE_URL}${DAHUA_API_PATH}?action=next&name=AccessControlCardRec&count=1024`;
+            const nextUriPath = `${DAHUA_API_PATH}?action=next&name=AccessControlCardRec&count=1024`;
+
+            console.log(`[${DAHUA_BASE_URL}] Devam kayıtları alınıyor... (${fetchedRecords}/${totalRecords})`);
+
+            const nextData = await makeAuthenticatedRequest(DAHUA_BASE_URL, nextUrl, nextUriPath, DAHUA_USERNAME, DAHUA_PASSWORD);
+
+            if (!nextData) {
+                console.log(`[${DAHUA_BASE_URL}] Devam kayıtları alınamadı, mevcut kayıtlarla devam ediliyor.`);
+                break;
+            }
+
+            // Parse records from next response and append to allData
+            const nextRecordMatches = nextData.match(/records\[\d+\]/g);
+            if (nextRecordMatches) {
+                const uniqueNextIndices = new Set(nextRecordMatches.map(m => m.match(/\d+/)[0]));
+                const newRecordsCount = uniqueNextIndices.size;
+
+                if (newRecordsCount === 0) {
+                    console.log(`[${DAHUA_BASE_URL}] Daha fazla kayıt yok.`);
+                    break;
+                }
+
+                // Append new records to allData (skip the "found=" line)
+                const nextLines = nextData.split('\n').filter(line => !line.startsWith('found='));
+                allData += '\n' + nextLines.join('\n');
+
+                fetchedRecords += newRecordsCount;
+                console.log(`[${DAHUA_BASE_URL}] Yeni kayıt eklendi: ${newRecordsCount}, Toplam: ${fetchedRecords}/${totalRecords}`);
+            } else {
+                console.log(`[${DAHUA_BASE_URL}] Devam kaydı bulunamadı.`);
+                break;
+            }
+
+            // Safety check to prevent infinite loops
+            if (fetchedRecords >= 10000) {
+                console.log(`[${DAHUA_BASE_URL}] Güvenlik limiti (10000 kayıt) aşıldı, durduruluyor.`);
+                break;
+            }
+        }
+
+        console.log(`[${DAHUA_BASE_URL}] Toplam ${fetchedRecords} kayıt alındı.`);
+        return allData;
+
+    } catch (error) {
+        console.error(`[${DAHUA_BASE_URL}] Veri alınırken hata:`, error.message);
+        return '';
+    }
+}
+
+// Helper function to make authenticated requests
+async function makeAuthenticatedRequest(baseUrl, fullUrl, uriPath, username, password) {
+    try {
+        const initialResponse = await axios.get(fullUrl, { validateStatus: (status) => status === 200 || status === 401 });
 
         if (initialResponse.status === 401 && initialResponse.headers['www-authenticate']) {
             const wwwAuthHeader = initialResponse.headers['www-authenticate'];
@@ -147,21 +231,17 @@ async function fetchRecordsFromDevice(device, startTime, endTime) {
                 throw new Error('www-authenticate başlığında eksik realm, nonce veya qop.');
             }
 
-            console.log(`Cihazdan ${DAHUA_BASE_URL} alınan www-authenticate başlığı: ${wwwAuthHeader}`);
-            const authHeader = await generateDigestAuthHeader('GET', dahuaUriPath, wwwAuthHeader, DAHUA_USERNAME, DAHUA_PASSWORD, realmMatch[1], nonceMatch[1], qopMatch[1]);
-            console.log(`Cihaz ${DAHUA_BASE_URL} için oluşturulan Yetkilendirme Başlığı: ${authHeader}`);
-            const authenticatedResponse = await axios.get(dahuaApiUrl, { headers: { 'Authorization': authHeader } });
-            console.log(`Cihaz ${DAHUA_BASE_URL} için kimliği doğrulanmış yanıt durumu: ${authenticatedResponse.status}`);
-            console.log(`Cihazdan ${DAHUA_BASE_URL} alınan veri:`, authenticatedResponse.data);
+            const authHeader = await generateDigestAuthHeader('GET', uriPath, wwwAuthHeader, username, password, realmMatch[1], nonceMatch[1], qopMatch[1]);
+            const authenticatedResponse = await axios.get(fullUrl, { headers: { 'Authorization': authHeader } });
             return authenticatedResponse.data;
         } else if (initialResponse.status === 200) {
             return initialResponse.data;
         } else {
-            console.error(`Cihazdan beklenmeyen durum kodu: ${initialResponse.status}`, device);
+            console.error(`[${baseUrl}] Beklenmeyen durum kodu: ${initialResponse.status}`);
             return '';
         }
     } catch (error) {
-        console.error(`Cihazdan veri alınırken hata: ${error.message}`, device);
+        console.error(`[${baseUrl}] İstek hatası:`, error.message);
         return '';
     }
 }
