@@ -106,15 +106,19 @@ class NavBarPageController extends GetxController {
   }
 
   void preloadAttendanceCache() {
-    // Find AttendanceController and trigger preload
+    // Find or put AttendanceController and trigger preload
+    AttendanceController attendanceController;
     try {
-      final attendanceController = Get.find<AttendanceController>();
-      Future.delayed(const Duration(milliseconds: 100), () {
-        attendanceController.preloadAllLocations();
-      });
+      attendanceController = Get.find<AttendanceController>();
     } catch (e) {
-      print('AttendanceController not found yet, will preload later');
+      print('AttendanceController not found, initializing it for preload...');
+      // We need to make sure dependencies are ready if any
+      attendanceController = Get.put(AttendanceController());
     }
+
+    Future.delayed(const Duration(milliseconds: 100), () {
+      attendanceController.preloadAllLocations();
+    });
   }
 
   void changeFactoryLocation(String location) {

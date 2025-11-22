@@ -80,6 +80,7 @@ class AttendanceController extends GetxController {
     final locations = ['merkez', 'dostluk_akbulut', 'dostluk_tm_gips'];
 
     print('🔄 Preloading cache for all locations in PARALLEL...');
+    final stopwatch = Stopwatch()..start();
 
     // Create a list of futures to run in parallel
     final List<Future<void>> futures = [];
@@ -96,16 +97,23 @@ class AttendanceController extends GetxController {
     await Future.wait(futures);
 
     isPreloadingCache.value = false;
-    print('✅ All locations preloaded!');
+    stopwatch.stop();
+    print('✅ All locations preloaded in ${stopwatch.elapsed.inSeconds}s!');
+
+    // Refresh current view if we are on it
+    if (!isLoading.value) {
+      fetchData();
+    }
   }
 
   // Load cache for a specific location
   Future<void> _loadLocationCache(String location) async {
+    final stopwatch = Stopwatch()..start();
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final thirtyDaysAgo = today.subtract(const Duration(days: 30));
 
-    print('📦 Loading cache for: $location (fetching in chunks)');
+    // print('📦 Loading cache for: $location (fetching in chunks)');
 
     List<AttendanceRecord> allRecords = [];
 
@@ -119,19 +127,19 @@ class AttendanceController extends GetxController {
         currentEnd = totalEnd;
       }
 
-      print(
-          '  ⬇️ Fetching chunk: ${DateFormat('yyyy-MM-dd').format(currentStart)} to ${DateFormat('yyyy-MM-dd').format(currentEnd)}');
+      // print('  ⬇️ Fetching chunk: ${DateFormat('yyyy-MM-dd').format(currentStart)} to ${DateFormat('yyyy-MM-dd').format(currentEnd)}');
 
       try {
-        final chunkRecords = await _dahuaService.fetchAttendanceRecords(
+        final List<AttendanceRecord> chunkRecords =
+            await _dahuaService.fetchAttendanceRecords(
           currentStart,
           currentEnd,
           location: location,
         );
         allRecords.addAll(chunkRecords);
-        print('  ✅ Chunk loaded: ${chunkRecords.length} records');
+        // print('  ✅ Chunk loaded: ${chunkRecords.length} records');
       } catch (e) {
-        print('  ❌ Error fetching chunk: $e');
+        print('  ❌ Error fetching chunk for $location: $e');
       }
 
       currentStart = currentEnd;
@@ -150,8 +158,9 @@ class AttendanceController extends GetxController {
     _locationEmployeeNames[location] = employeeNames;
     _locationCacheTime[location] = now;
 
+    stopwatch.stop();
     print(
-        '✅ Cached $location: ${employeeNames.length} employees, ${allRecords.length} total records');
+        '⏱️ $location loaded in ${stopwatch.elapsed.inSeconds}s (${allRecords.length} records)');
   }
 
   Future<void> fetchData() async {
@@ -161,14 +170,27 @@ class AttendanceController extends GetxController {
       final location = selectedLocation.value;
 
       // Check if we have cache for this location
-      final bool hasCache = _locationCache.containsKey(location) &&
+      bool hasCache = _locationCache.containsKey(location) &&
           _locationEmployeeNames.containsKey(location);
+
+      // If preloading is active and we don't have cache yet, wait for it!
+      if (!hasCache && isPreloadingCache.value) {
+        print('⏳ Preload in progress, waiting for it to finish...');
+        // Wait until isPreloadingCache becomes false
+        await isPreloadingCache.stream.firstWhere((val) => val == false);
+        print('✅ Preload finished, checking cache again.');
+
+        // Re-check cache
+        hasCache = _locationCache.containsKey(location) &&
+            _locationEmployeeNames.containsKey(location);
+      }
 
       Map<String, String> allEmployeeNames;
       List<AttendanceRecord> rangeRecords;
 
       if (!hasCache) {
         print('🌐 Cache missing, loading fresh data...');
+        // Only load if not already loading (double check)
         await _loadLocationCache(location);
 
         // Re-check cache after loading

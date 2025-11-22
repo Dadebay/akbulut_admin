@@ -26,7 +26,7 @@ class DahuaService {
       final response = await http.get(url).timeout(const Duration(seconds: 60));
       print("Sunucudan gelen yanıt durumu: ${response.statusCode}");
       if (response.statusCode == 200) {
-        return _parseResponse(response.body);
+        return List<AttendanceRecord>.from(_parseResponse(response.body));
       } else {
         throw Exception(
             'Sunucudan hata alındı: ${response.statusCode} - ${response.body}');
